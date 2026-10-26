@@ -1,0 +1,33 @@
+/* home.css — TRIMORA Homepage Specific Styles */
+
+.hero-section {
+  min-height: 90vh;
+}
+
+.service-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.service-card > div:last-child {
+  flex: 1;
+  padding: var(--space-5) var(--space-6) var(--space-6);
+}
+
+@media (max-width: 768px) {
+  .hero-section {
+    min-height: 80vh;
+  }
+}
+
+/* Two-column grid break */
+@media (max-width: 1024px) {
+  .about-grid {
+    grid-template-columns: 1fr;
+  }
+  .about-grid img {
+    height: 320px;
+  }
+}
