@@ -8,6 +8,7 @@ import {
 } from '../data/trimoraData';
 import { Service, StaffMember, Customer, Appointment, Review, AppointmentStatus, TimeSlot, BookingState } from '../types';
 import { generateAvailableSlots } from '../utils/availability';
+import { apiClient } from './apiClient';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -26,6 +27,13 @@ const getContextBusinessId = (): string => {
 // ─── SERVICE API ─────────────────────────────────────────────
 export const trimoraServiceApi = {
   async getAllServices(categoryFilter?: string): Promise<Service[]> {
+    const remote = await apiClient.get<Service[]>(
+      `/services${categoryFilter && categoryFilter !== 'all' ? `?category=${categoryFilter}` : ''}`
+    );
+    if (remote && Array.isArray(remote) && remote.length > 0) {
+      return remote;
+    }
+
     await delay(300);
     const bizId = getContextBusinessId();
     let result = trimoraServices.filter(s => s.isActive && s.businessId === bizId);
@@ -36,16 +44,26 @@ export const trimoraServiceApi = {
   },
 
   async getServiceById(id: string): Promise<Service | null> {
+    const remote = await apiClient.get<Service>(`/services/${id}`);
+    if (remote) return remote;
+
     await delay(200);
     return trimoraServices.find(s => s.id === id && s.isActive) || null;
   },
 
   async getFeaturedServices(): Promise<Service[]> {
-    await delay(200);
-    return trimoraServices.filter(s => s.isActive && s.isFeatured);
+    const all = await this.getAllServices();
+    return all.filter(s => s.isActive && s.isFeatured);
   },
 
   async updateService(id: string, data: Partial<Service>): Promise<Service> {
+    const remote = await apiClient.put<Service>(`/services/${id}`, data);
+    if (remote) {
+      const idx = trimoraServices.findIndex(s => s.id === id);
+      if (idx !== -1) Object.assign(trimoraServices[idx], remote);
+      return remote;
+    }
+
     await delay(600);
     const idx = trimoraServices.findIndex(s => s.id === id);
     if (idx === -1) throw new Error('Service not found');
@@ -54,6 +72,12 @@ export const trimoraServiceApi = {
   },
 
   async createService(data: Omit<Service, 'id'>): Promise<Service> {
+    const remote = await apiClient.post<Service>('/services', data);
+    if (remote) {
+      trimoraServices.push(remote);
+      return remote;
+    }
+
     await delay(600);
     const newService: Service = {
       ...data,
@@ -65,6 +89,7 @@ export const trimoraServiceApi = {
   },
 
   async deleteService(id: string): Promise<void> {
+    await apiClient.delete(`/services/${id}`);
     await delay(400);
     const idx = trimoraServices.findIndex(s => s.id === id);
     if (idx !== -1) trimoraServices[idx].isActive = false;
@@ -74,6 +99,11 @@ export const trimoraServiceApi = {
 // ─── STYLIST API ──────────────────────────────────────────────
 export const trimmoraStylistApi = {
   async getAllStylists(): Promise<StaffMember[]> {
+    const remote = await apiClient.get<StaffMember[]>('/stylists');
+    if (remote && Array.isArray(remote) && remote.length > 0) {
+      return remote;
+    }
+
     await delay(300);
     const bizId = getContextBusinessId();
     return trimoraStylists
@@ -82,11 +112,19 @@ export const trimmoraStylistApi = {
   },
 
   async getStylistById(id: string): Promise<StaffMember | null> {
+    const remote = await apiClient.get<StaffMember>(`/stylists/${id}`);
+    if (remote) return remote;
+
     await delay(200);
     return trimoraStylists.find(s => s.id === id) || null;
   },
 
   async getStylistsForService(serviceId: string): Promise<StaffMember[]> {
+    const remote = await apiClient.get<StaffMember[]>(`/stylists?serviceId=${serviceId}`);
+    if (remote && Array.isArray(remote) && remote.length > 0) {
+      return remote;
+    }
+
     await delay(300);
     const svc = trimoraServices.find(s => s.id === serviceId);
     if (!svc) return [];
@@ -96,6 +134,13 @@ export const trimmoraStylistApi = {
   },
 
   async updateStylist(id: string, data: Partial<StaffMember>): Promise<StaffMember> {
+    const remote = await apiClient.put<StaffMember>(`/stylists/${id}`, data);
+    if (remote) {
+      const idx = trimoraStylists.findIndex(s => s.id === id);
+      if (idx !== -1) Object.assign(trimoraStylists[idx], remote);
+      return remote;
+    }
+
     await delay(600);
     const idx = trimoraStylists.findIndex(s => s.id === id);
     if (idx === -1) throw new Error('Stylist not found');
@@ -104,6 +149,12 @@ export const trimmoraStylistApi = {
   },
 
   async createStylist(data: Omit<StaffMember, 'id'>): Promise<StaffMember> {
+    const remote = await apiClient.post<StaffMember>('/stylists', data);
+    if (remote) {
+      trimoraStylists.push(remote);
+      return remote;
+    }
+
     await delay(600);
     const newStylist: StaffMember = {
       ...data,
@@ -115,6 +166,7 @@ export const trimmoraStylistApi = {
   },
 
   async deleteStylist(id: string): Promise<void> {
+    await apiClient.delete(`/stylists/${id}`);
     await delay(400);
     const idx = trimoraStylists.findIndex(s => s.id === id);
     if (idx !== -1) trimoraStylists[idx].isActive = false;
@@ -174,6 +226,12 @@ export const trimoraAvailabilityApi = {
 // ─── BOOKING API ──────────────────────────────────────────────
 export const trimoraBookingApi = {
   async createBooking(bookingData: BookingState & { customerId?: string }): Promise<Appointment & { bookingRef: string }> {
+    const remote = await apiClient.post<Appointment & { bookingRef: string }>('/bookings', bookingData);
+    if (remote) {
+      addToAppointmentStore(remote);
+      return remote;
+    }
+
     await delay(1200);
 
     const participant = bookingData.participants[0];
@@ -227,6 +285,11 @@ export const trimoraBookingApi = {
   },
 
   async getAppointmentsByBusiness(): Promise<Appointment[]> {
+    const remote = await apiClient.get<Appointment[]>('/bookings');
+    if (remote && Array.isArray(remote) && remote.length > 0) {
+      return remote;
+    }
+
     await delay(300);
     const bizId = getContextBusinessId();
     return getAppointmentStore().filter(a => a.businessId === bizId);
@@ -292,6 +355,18 @@ export const trimoraBookingApi = {
     staffId?: string;
     query?: string;
   }): Promise<Appointment[]> {
+    const params = new URLSearchParams();
+    if (filters?.date) params.set('date', filters.date);
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.staffId) params.set('staffId', filters.staffId);
+    if (filters?.query) params.set('search', filters.query);
+    const qStr = params.toString();
+
+    const remote = await apiClient.get<Appointment[]>(`/bookings${qStr ? `?${qStr}` : ''}`);
+    if (remote && Array.isArray(remote) && remote.length > 0) {
+      return remote;
+    }
+
     await delay(400);
     const bizId = getContextBusinessId();
     let result = getAppointmentStore().filter(a => a.businessId === bizId);
@@ -316,6 +391,12 @@ export const trimoraBookingApi = {
   },
 
   async updateStatus(id: string, status: AppointmentStatus): Promise<Appointment> {
+    const remote = await apiClient.patch<Appointment>(`/bookings/${id}/status`, { status });
+    if (remote) {
+      updateAppointmentInStore(id, { status, updatedAt: new Date().toISOString() });
+      return remote;
+    }
+
     await delay(400);
     const apt = getAppointmentStore().find(a => a.id === id);
     if (!apt) throw new Error('Appointment not found');
@@ -324,6 +405,7 @@ export const trimoraBookingApi = {
   },
 
   async cancelAppointment(id: string): Promise<void> {
+    await apiClient.delete(`/bookings/${id}`);
     await this.updateStatus(id, 'cancelled');
   },
 
@@ -345,6 +427,13 @@ export const trimoraBookingApi = {
 // ─── CUSTOMER API ─────────────────────────────────────────────
 export const trimoraCustomerApi = {
   async getAllCustomers(query?: string): Promise<Customer[]> {
+    const remote = await apiClient.get<Customer[]>(
+      `/customers${query ? `?search=${encodeURIComponent(query)}` : ''}`
+    );
+    if (remote && Array.isArray(remote) && remote.length > 0) {
+      return remote;
+    }
+
     await delay(400);
     const bizId = getContextBusinessId();
     let result = trimoraCustomers.filter(c => c.businessId === bizId);
@@ -361,11 +450,21 @@ export const trimoraCustomerApi = {
   },
 
   async getCustomerById(id: string): Promise<Customer | null> {
+    const remote = await apiClient.get<Customer>(`/customers/${id}`);
+    if (remote) return remote;
+
     await delay(200);
     return trimoraCustomers.find(c => c.id === id) || null;
   },
 
   async updateCustomer(id: string, data: Partial<Customer>): Promise<Customer> {
+    const remote = await apiClient.put<Customer>(`/customers/${id}`, data);
+    if (remote) {
+      const idx = trimoraCustomers.findIndex(c => c.id === id);
+      if (idx !== -1) Object.assign(trimoraCustomers[idx], remote);
+      return remote;
+    }
+
     await delay(500);
     const idx = trimoraCustomers.findIndex(c => c.id === id);
     if (idx === -1) throw new Error('Customer not found');
@@ -377,6 +476,11 @@ export const trimoraCustomerApi = {
 // ─── REVIEW API ───────────────────────────────────────────────
 export const trimoraReviewApi = {
   async getReviews(): Promise<Review[]> {
+    const remote = await apiClient.get<Review[]>('/reviews');
+    if (remote && Array.isArray(remote) && remote.length > 0) {
+      return remote;
+    }
+
     await delay(300);
     const bizId = getContextBusinessId();
     return trimoraReviews
@@ -385,15 +489,17 @@ export const trimoraReviewApi = {
   },
 
   async getFeaturedReviews(): Promise<Review[]> {
-    await delay(200);
-    const bizId = getContextBusinessId();
-    return trimoraReviews.filter(r => r.businessId === bizId && r.overallRating >= 5).slice(0, 3);
+    const all = await this.getReviews();
+    return all.filter(r => r.overallRating >= 5).slice(0, 3);
   },
 };
 
 // ─── DASHBOARD STATS ──────────────────────────────────────────
 export const trimoraDashboardApi = {
   async getDashboardStats() {
+    const remote = await apiClient.get<any>('/dashboard/stats');
+    if (remote) return remote;
+
     await delay(500);
     const bizId = getContextBusinessId();
     const allApts = getAppointmentStore().filter(a => a.businessId === bizId);

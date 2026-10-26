@@ -1,4 +1,5 @@
 import { User, AuthState } from '../types';
+import { apiClient } from './apiClient';
 
 let _usersCache: (User & { password: string })[] | null = null;
 const getUsers = (): (User & { password: string })[] => {
@@ -38,6 +39,13 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const mockAuthService = {
   async login(email: string, password: string): Promise<{ user: User; token: string }> {
+    // Attempt Neon Backend Login first
+    const remote = await apiClient.post<{ user: User; token: string }>('/auth/login', { email, password });
+    if (remote && remote.user) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: remote.user, token: remote.token }));
+      return remote;
+    }
+
     await delay(800);
     
     // OWASP A07: Brute Force Protection

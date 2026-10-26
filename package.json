@@ -5,13 +5,23 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "tsx watch server/index.ts",
+    "dev:all": "concurrently -n \"VITE,SERVER\" -c \"cyan,magenta\" \"vite\" \"tsx watch server/index.ts\"",
+    "db:migrate": "tsx server/db/migrate.ts",
+    "db:seed": "tsx server/db/seed.ts",
+    "db:setup": "tsx server/db/migrate.ts && tsx server/db/seed.ts",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.117.3",
+    "@neon/config": "^1.9.4",
+    "@neon/env": "^1.6.5",
+    "@neondatabase/serverless": "^1.2.0",
+    "cors": "^2.8.6",
     "date-fns": "^4.4.0",
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
     "framer-motion": "^13.2.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
@@ -24,11 +34,15 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",
+    "concurrently": "^10.0.6",
     "oxlint": "^1.79.0",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.2",
     "vite": "^8.2.2"
   }

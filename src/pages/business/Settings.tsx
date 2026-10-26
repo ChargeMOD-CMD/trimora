@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { Settings as SettingsIcon, UserPlus, Eye, EyeOff, Key, Save, Shield, Edit2, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Settings as SettingsIcon, UserPlus, Eye, EyeOff, Key, Save, Shield, Edit2, Trash2, Database, CheckCircle2, AlertCircle, RefreshCw, Terminal, ExternalLink } from 'lucide-react';
 import { DashboardLayout } from '../../components/layout/DashboardLayout';
 import { Button, Input, Modal, Badge } from '../../components/ui';
 import { useToast } from '../../features/notifications/ToastContext';
+import { checkBackendHealth } from '../../services/apiClient';
 
 import { mockAuthService } from '../../services/mockAuthService';
 import { useAuth } from '../../features/auth/AuthContext';
@@ -47,8 +48,33 @@ export default function Settings() {
     }
   };
 
-  React.useEffect(() => {
+  // Database Connection State
+  const [dbStatus, setDbStatus] = useState<{
+    serverOnline: boolean;
+    neonConnected: boolean;
+    message: string;
+    loading: boolean;
+  }>({
+    serverOnline: false,
+    neonConnected: false,
+    message: 'Checking...',
+    loading: true,
+  });
+
+  const checkDb = async () => {
+    setDbStatus(prev => ({ ...prev, loading: true }));
+    const status = await checkBackendHealth(true);
+    setDbStatus({
+      serverOnline: status.serverOnline,
+      neonConnected: status.neonConnected,
+      message: status.message,
+      loading: false,
+    });
+  };
+
+  useEffect(() => {
     fetchUsers();
+    checkDb();
   }, []);
   
   // Add/Edit User Modal State
@@ -157,6 +183,74 @@ export default function Settings() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
         
+        {/* Neon PostgreSQL Database Section */}
+        <div className="card" style={{ padding: 'var(--space-6)', border: '1px solid var(--color-border)', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
+                <Database size={22} style={{ color: 'var(--color-accent)' }} />
+                <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 600 }}>Neon PostgreSQL Backend</h2>
+                {dbStatus.neonConnected ? (
+                  <Badge variant="accent">
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <CheckCircle2 size={13} /> Connected to Neon
+                    </span>
+                  </Badge>
+                ) : dbStatus.serverOnline ? (
+                  <Badge variant="warning">
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <AlertCircle size={13} /> Server Online (DB Pending)
+                    </span>
+                  </Badge>
+                ) : (
+                  <Badge variant="default">
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <AlertCircle size={13} /> Mock Fallback Active
+                    </span>
+                  </Badge>
+                )}
+              </div>
+              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
+                Serverless PostgreSQL powered by <strong style={{ color: 'var(--color-text-primary)' }}>Neon DB</strong>. All services, bookings, customers, and staff sync to your cloud database.
+              </p>
+            </div>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<RefreshCw size={14} className={dbStatus.loading ? 'animate-spin' : ''} />}
+              onClick={checkDb}
+              disabled={dbStatus.loading}
+            >
+              Test Connection
+            </Button>
+          </div>
+
+          <div style={{ background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', marginBottom: 'var(--space-4)', fontSize: 'var(--text-xs)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)' }}>
+              <span style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>Database Connection Status:</span>
+              <span style={{ color: dbStatus.neonConnected ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
+                {dbStatus.message}
+              </span>
+            </div>
+            <div style={{ color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+              1. Add your Neon DB connection string into the project root <code style={{ color: 'var(--color-accent)', padding: '2px 6px', background: 'var(--color-bg-tertiary)', borderRadius: 4 }}>.env</code> file:
+              <pre style={{ marginTop: 6, marginBottom: 8, padding: 8, background: 'var(--color-bg-primary)', borderRadius: 4, overflowX: 'auto', color: 'var(--color-text-primary)' }}>
+                DATABASE_URL=postgresql://user:password@ep-your-neon-project.region.aws.neon.tech/neondb?sslmode=require
+              </pre>
+              2. Run migrations and seed data in your terminal:
+              <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 6, flexWrap: 'wrap' }}>
+                <code style={{ padding: '4px 8px', background: 'var(--color-bg-primary)', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Terminal size={12} /> npm run db:setup
+                </code>
+                <code style={{ padding: '4px 8px', background: 'var(--color-bg-primary)', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <Terminal size={12} /> npm run server
+                </code>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Basic Information Section */}
         <div className="card" style={{ padding: 'var(--space-6)' }}>
           <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 600, marginBottom: 'var(--space-4)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
