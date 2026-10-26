@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Scissors, Mail, Lock, ArrowRight, Eye, EyeOff, ShieldCheck, AlertTriangle, KeyRound } from 'lucide-react';
+import { Scissors, Mail, Lock, ArrowRight, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../features/auth/AuthContext';
 import { useToast } from '../../features/notifications/ToastContext';
 import { Button, Input } from '../../components/ui';
@@ -75,11 +75,6 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleQuickDemo = (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
   };
 
   return (
@@ -178,88 +173,9 @@ export default function Login() {
                 fullWidth
                 style={{ marginTop: 'var(--space-2)' }}
               >
-                {lockoutTimer > 0 ? `Locked (${lockoutTimer}s)` : 'Secure Sign In'} <ArrowRight size={16} style={{ marginLeft: 4 }} />
+                {lockoutTimer > 0 ? `Locked (${lockoutTimer}s)` : 'Sign In'} <ArrowRight size={16} style={{ marginLeft: 4 }} />
               </Button>
             </form>
-
-            {/* One-Click Role Selector for Testing RBAC */}
-            <div style={{ marginTop: 'var(--space-6)', padding: 'var(--space-4)', background: 'var(--color-surface-elevated)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-3)' }}>
-                <KeyRound size={16} color="var(--color-accent)" />
-                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-secondary)' }}>
-                  Quick Role Switcher (RBAC Demo)
-                </span>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-2)' }}>
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemo('super@trimora', 'super@2026#')}
-                  style={{
-                    padding: 'var(--space-2)',
-                    fontSize: 'var(--text-xs)',
-                    fontWeight: 600,
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--color-border)',
-                    background: 'var(--color-surface)',
-                    color: 'var(--color-text)',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                  }}
-                >
-                  👑 Super Admin
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemo('admin@trimora', 'saloon@2026#')}
-                  style={{
-                    padding: 'var(--space-2)',
-                    fontSize: 'var(--text-xs)',
-                    fontWeight: 600,
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--color-border)',
-                    background: 'var(--color-surface)',
-                    color: 'var(--color-text)',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                  }}
-                >
-                  🏢 Salon Owner
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickDemo('isabelle@trimora.co.uk', 'password123')}
-                  style={{
-                    padding: 'var(--space-2)',
-                    fontSize: 'var(--text-xs)',
-                    fontWeight: 600,
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--color-border)',
-                    background: 'var(--color-surface)',
-                    color: 'var(--color-text)',
-                    cursor: 'pointer',
-                    textAlign: 'center',
-                  }}
-                >
-                  ✂️ Staff / Stylist
-                </button>
-              </div>
-            </div>
-
-            {/* Security Compliance Badge (OWASP Top 10) */}
-            <div
-              style={{
-                marginTop: 'var(--space-6)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 'var(--space-2)',
-                color: 'var(--color-text-muted)',
-                fontSize: 'var(--text-xs)',
-              }}
-            >
-              <ShieldCheck size={16} color="#10B981" />
-              <span>OWASP Top 10 Secured &bull; Bcrypt Hashed &bull; 256-Bit TLS</span>
-            </div>
 
           </div>
         </div>
