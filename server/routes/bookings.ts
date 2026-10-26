@@ -1,5 +1,14 @@
 import { Router } from 'express';
 import { query, isDbConfigured } from '../db/connection';
+import {
+  authenticateToken,
+  optionalAuthenticateToken,
+  requireRole,
+  requireTenantAccess,
+  bookingRateLimiter,
+  sanitizeString,
+  AuthenticatedRequest,
+} from '../middleware/security';
 
 const router = Router();
 
@@ -27,72 +36,65 @@ const SELECT_APPOINTMENT_FIELDS = `
   updated_at as "updatedAt"
 `;
 
-// GET /api/bookings
-router.get('/', async (req, res) => {
-  try {
-    if (!isDbConfigured()) {
-      return res.status(503).json({ error: 'Database not connected', dbConfigured: false });
+// GET /api/bookings (OWASP A01: Protected Staff View)
+router.get(
+  '/',
+  authenticateToken,
+  requireRole(['super_admin', 'owner', 'manager', 'stylist', 'receptionist']),
+  requireTenantAccess,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!isDbConfigured()) {
+        return res.status(503).json({ error: 'Database not connected', dbConfigured: false });
+      }
+
+      const businessId = req.user?.role === 'super_admin'
+        ? (req.query.businessId as string || 'trimora-salon')
+        : (req.user?.businessId || 'trimora-salon');
+
+      const { status, date, staffId, customerId, search } = req.query;
+
+      let sqlText = `SELECT ${SELECT_APPOINTMENT_FIELDS} FROM appointments WHERE business_id = $1`;
+      const params: any[] = [businessId];
+
+      if (customerId) {
+        params.push(customerId);
+        sqlText += ` AND customer_id = $${params.length}`;
+      }
+
+      if (status) {
+        params.push(status);
+        sqlText += ` AND status = $${params.length}`;
+      }
+
+      if (date) {
+        params.push(`${date}%`);
+        sqlText += ` AND created_at::text LIKE $${params.length}`;
+      }
+
+      if (search) {
+        const cleanSearch = sanitizeString(search);
+        params.push(`%${cleanSearch}%`);
+        sqlText += ` AND (
+          booking_ref ILIKE $${params.length} OR 
+          customer_email ILIKE $${params.length} OR 
+          notes ILIKE $${params.length}
+        )`;
+      }
+
+      sqlText += ` ORDER BY created_at DESC`;
+
+      const appointments = await query(sqlText, params);
+      return res.json(appointments);
+    } catch (err: any) {
+      console.error('Fetch appointments error:', err);
+      return res.status(500).json({ error: 'Failed to retrieve appointments' });
     }
-
-    const {
-      businessId = 'trimora-salon',
-      status,
-      date,
-      staffId,
-      customerId,
-      search,
-    } = req.query;
-
-    let sqlText = `SELECT ${SELECT_APPOINTMENT_FIELDS} FROM appointments WHERE business_id = $1`;
-    const params: any[] = [businessId];
-
-    if (customerId) {
-      params.push(customerId);
-      sqlText += ` AND customer_id = $${params.length}`;
-    }
-
-    if (status) {
-      params.push(status);
-      sqlText += ` AND status = $${params.length}`;
-    }
-
-    if (date) {
-      params.push(`${date}%`);
-      sqlText += ` AND EXISTS (
-        SELECT 1 FROM jsonb_array_elements(participants) p 
-        WHERE (p->>'startTime') LIKE $${params.length}
-      )`;
-    }
-
-    if (staffId) {
-      params.push(staffId);
-      sqlText += ` AND EXISTS (
-        SELECT 1 FROM jsonb_array_elements(participants) p 
-        WHERE p->>'staffId' = $${params.length}
-      )`;
-    }
-
-    if (search) {
-      params.push(`%${search}%`);
-      sqlText += ` AND (
-        id ILIKE $${params.length} OR 
-        customer_email ILIKE $${params.length} OR 
-        notes ILIKE $${params.length}
-      )`;
-    }
-
-    sqlText += ` ORDER BY created_at DESC`;
-
-    const appointments = await query(sqlText, params);
-    return res.json(appointments);
-  } catch (err: any) {
-    console.error('Fetch appointments error:', err);
-    return res.status(500).json({ error: err.message });
   }
-});
+);
 
 // GET /api/bookings/:id
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(503).json({ error: 'Database not connected' });
@@ -108,14 +110,19 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Appointment not found' });
     }
 
-    return res.json(result[0]);
+    const apt = result[0];
+    if (req.user?.role !== 'super_admin' && req.user?.businessId && apt.businessId !== req.user.businessId) {
+      return res.status(403).json({ error: 'Access denied: Appointment belongs to another salon' });
+    }
+
+    return res.json(apt);
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Failed to retrieve appointment' });
   }
 });
 
-// POST /api/bookings
-router.post('/', async (req, res) => {
+// POST /api/bookings (OWASP A03 & A07: Public Booking with Anti-Spam Rate Limiter)
+router.post('/', bookingRateLimiter, optionalAuthenticateToken, async (req: AuthenticatedRequest, res) => {
   try {
     if (!isDbConfigured()) {
       return res.status(503).json({ error: 'Database not connected' });
@@ -124,7 +131,7 @@ router.post('/', async (req, res) => {
     const {
       businessId = 'trimora-salon',
       locationId = 'trimora-loc-1',
-      customerId = 'guest',
+      customerId = req.user?.id || 'guest',
       customerEmail,
       customerPhone,
       guestName,
@@ -141,19 +148,25 @@ router.post('/', async (req, res) => {
     const aptId = `ta-apt-${Date.now()}`;
     const bookingRef = `TRM-${new Date().getFullYear()}-${Math.floor(Math.random() * 90000) + 10000}`;
 
+    // Sanitize input values (OWASP A03)
+    const cleanNotes = sanitizeString(notes);
+    const cleanEmail = customerEmail ? sanitizeString(customerEmail) : (req.body.guestEmail ? sanitizeString(req.body.guestEmail) : null);
+    const cleanPhone = customerPhone ? sanitizeString(customerPhone) : (req.body.guestPhone ? sanitizeString(req.body.guestPhone) : null);
+    const cleanGuestName = guestName ? sanitizeString(guestName) : 'Guest';
+
     // Format participants if sent in flat booking form
     const formattedParticipants = participants || [
       {
         id: `tap-${Date.now()}`,
         appointmentId: aptId,
-        personName: guestName || 'Guest',
+        personName: cleanGuestName,
         serviceId: req.body.serviceId,
         staffId: req.body.staffId,
         addonIds: req.body.addonIds || [],
         startTime: `${req.body.selectedDate}T${req.body.selectedTime}:00.000Z`,
         durationMins: req.body.durationMins || 45,
         price: totalPrice,
-        notes: notes,
+        notes: cleanNotes,
       },
     ];
 
@@ -175,8 +188,8 @@ router.post('/', async (req, res) => {
         businessId,
         locationId,
         customerId,
-        customerEmail || req.body.guestEmail || null,
-        customerPhone || req.body.guestPhone || null,
+        cleanEmail,
+        cleanPhone,
         bookingRef,
         type,
         JSON.stringify(formattedParticipants),
@@ -186,7 +199,7 @@ router.post('/', async (req, res) => {
         totalPrice || 0,
         depositAmount,
         discountAmount,
-        notes,
+        cleanNotes,
         bookingSource,
       ]
     );
@@ -195,106 +208,79 @@ router.post('/', async (req, res) => {
     return res.status(201).json({ ...created[0], bookingRef });
   } catch (err: any) {
     console.error('Create booking error:', err);
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Failed to create booking' });
   }
 });
 
 // PATCH /api/bookings/:id/status
-router.patch('/:id/status', async (req, res) => {
-  try {
-    if (!isDbConfigured()) {
-      return res.status(503).json({ error: 'Database not connected' });
+router.patch(
+  '/:id/status',
+  authenticateToken,
+  requireRole(['super_admin', 'owner', 'manager', 'stylist', 'receptionist']),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!isDbConfigured()) {
+        return res.status(503).json({ error: 'Database not connected' });
+      }
+
+      const { id } = req.params;
+      const { status } = req.body;
+
+      if (!status) {
+        return res.status(400).json({ error: 'Status is required' });
+      }
+
+      const existing = await query(`SELECT business_id as "businessId" FROM appointments WHERE id = $1`, [id]);
+      if (existing.length === 0) {
+        return res.status(404).json({ error: 'Appointment not found' });
+      }
+
+      if (req.user?.role !== 'super_admin' && req.user?.businessId && existing[0].businessId !== req.user.businessId) {
+        return res.status(403).json({ error: 'Access denied: Appointment belongs to another salon' });
+      }
+
+      const validStatuses = ['pending', 'confirmed', 'checked_in', 'in_progress', 'completed', 'cancelled', 'no_show'];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({ error: 'Invalid appointment status' });
+      }
+
+      await query(`UPDATE appointments SET status = $1, updated_at = NOW() WHERE id = $2`, [status, id]);
+      const updated = await query(`SELECT ${SELECT_APPOINTMENT_FIELDS} FROM appointments WHERE id = $1`, [id]);
+
+      return res.json(updated[0]);
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Failed to update appointment status' });
     }
-
-    const { id } = req.params;
-    const { status } = req.body;
-
-    if (!status) {
-      return res.status(400).json({ error: 'Status is required' });
-    }
-
-    await query(`UPDATE appointments SET status = $1, updated_at = NOW() WHERE id = $2`, [status, id]);
-    const updated = await query(`SELECT ${SELECT_APPOINTMENT_FIELDS} FROM appointments WHERE id = $1`, [id]);
-    
-    if (updated.length === 0) {
-      return res.status(404).json({ error: 'Appointment not found' });
-    }
-
-    return res.json(updated[0]);
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
   }
-});
-
-// PUT /api/bookings/:id
-router.put('/:id', async (req, res) => {
-  try {
-    if (!isDbConfigured()) {
-      return res.status(503).json({ error: 'Database not connected' });
-    }
-
-    const { id } = req.params;
-    const { notes, customerEmail, customerPhone, participants, status } = req.body;
-
-    const existing = await query(`SELECT * FROM appointments WHERE id = $1`, [id]);
-    if (existing.length === 0) {
-      return res.status(404).json({ error: 'Appointment not found' });
-    }
-
-    const updates: string[] = [];
-    const values: any[] = [];
-    let idx = 1;
-
-    if (notes !== undefined) {
-      updates.push(`notes = $${idx++}`);
-      values.push(notes);
-    }
-    if (customerEmail !== undefined) {
-      updates.push(`customer_email = $${idx++}`);
-      values.push(customerEmail);
-    }
-    if (customerPhone !== undefined) {
-      updates.push(`customer_phone = $${idx++}`);
-      values.push(customerPhone);
-    }
-    if (status !== undefined) {
-      updates.push(`status = $${idx++}`);
-      values.push(status);
-    }
-    if (participants !== undefined) {
-      updates.push(`participants = $${idx++}::jsonb`);
-      values.push(JSON.stringify(participants));
-    }
-
-    if (updates.length > 0) {
-      updates.push(`updated_at = NOW()`);
-      values.push(id);
-      await query(
-        `UPDATE appointments SET ${updates.join(', ')} WHERE id = $${values.length}`,
-        values
-      );
-    }
-
-    const updated = await query(`SELECT ${SELECT_APPOINTMENT_FIELDS} FROM appointments WHERE id = $1`, [id]);
-    return res.json(updated[0]);
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
-  }
-});
+);
 
 // DELETE /api/bookings/:id
-router.delete('/:id', async (req, res) => {
-  try {
-    if (!isDbConfigured()) {
-      return res.status(503).json({ error: 'Database not connected' });
-    }
+router.delete(
+  '/:id',
+  authenticateToken,
+  requireRole(['super_admin', 'owner', 'manager']),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      if (!isDbConfigured()) {
+        return res.status(503).json({ error: 'Database not connected' });
+      }
 
-    const { id } = req.params;
-    await query(`UPDATE appointments SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [id]);
-    return res.json({ success: true, message: 'Appointment cancelled' });
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+      const { id } = req.params;
+      const existing = await query(`SELECT business_id as "businessId" FROM appointments WHERE id = $1`, [id]);
+      if (existing.length === 0) {
+        return res.status(404).json({ error: 'Appointment not found' });
+      }
+
+      if (req.user?.role !== 'super_admin' && req.user?.businessId && existing[0].businessId !== req.user.businessId) {
+        return res.status(403).json({ error: 'Access denied: Appointment belongs to another salon' });
+      }
+
+      await query(`UPDATE appointments SET status = 'cancelled', updated_at = NOW() WHERE id = $1`, [id]);
+      return res.json({ success: true, message: 'Appointment cancelled' });
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Failed to cancel appointment' });
+    }
   }
-});
+);
 
 export default router;

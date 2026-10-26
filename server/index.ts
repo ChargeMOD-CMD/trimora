@@ -1,8 +1,10 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import dotenv from 'dotenv';
 import path from 'path';
 import { testConnection, isDbConfigured } from './db/connection';
+import { generalApiLimiter } from './middleware/security';
 
 import authRouter from './routes/auth';
 import servicesRouter from './routes/services';
@@ -20,24 +22,49 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
-// Middleware
+// ============================================================
+// OWASP A05: Security Misconfiguration - Headers & Hardening
+// ============================================================
+app.disable('x-powered-by');
+
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // Vite and dynamic client routing support
+    crossOriginEmbedderPolicy: false,
+    frameguard: { action: 'sameorigin' }, // OWASP Clickjacking defense
+    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true }, // OWASP Cryptographic Failures: Enforce HTTPS
+    noSniff: true, // Prevent MIME-sniffing
+    xssFilter: true, // Enable legacy browser XSS filters
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  })
+);
+
+// OWASP A07: General API Rate Limiting to prevent DoS
+app.use('/api', generalApiLimiter);
+
+// OWASP A04: Restrict Payload Size to 1MB preventing Memory Exhaustion DoS
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+// CORS Policy
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow local development origins or no origin (like curl or postman)
-      if (!origin || origin.includes('localhost') || origin === CLIENT_URL) {
+      // Allow local development origins, Vercel deployments, or same-origin requests
+      if (!origin || origin.includes('localhost') || origin.includes('vercel.app') || origin === CLIENT_URL) {
         callback(null, true);
       } else {
-        callback(null, true); // Permissive in development
+        callback(null, true); // Permissive fallback
       }
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   })
 );
-app.use(express.json());
 
 // API Root & Health Check
-const healthHandler = async (req: express.Request, res: express.Response) => {
+const healthHandler = async (req: Request, res: Response) => {
   const dbStatus = await testConnection();
   res.json({
     status: 'online',
@@ -75,8 +102,20 @@ app.use('/dashboard', dashboardRouter);
 app.use('/reviews', reviewsRouter);
 
 // 404 handler for unmatched API routes
-app.use('/api', (req, res) => {
+app.use('/api', (req: Request, res: Response) => {
   res.status(404).json({ error: `Endpoint not found: ${req.method} ${req.originalUrl}` });
+});
+
+// ============================================================
+// OWASP A05: Secure Error Handling - No Database Stack Traces
+// ============================================================
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error(`[SERVER ERROR] ${req.method} ${req.url}:`, err);
+  const isDev = process.env.NODE_ENV !== 'production';
+  res.status(err.status || 500).json({
+    error: isDev ? err.message : 'Internal server error. Please try again later.',
+    code: err.code || 'INTERNAL_ERROR',
+  });
 });
 
 // Start Server locally if not running in Vercel Serverless environment
@@ -86,6 +125,7 @@ if (!process.env.VERCEL) {
     console.log(`💈 TRIMORA BACKEND SERVER RUNNING ON PORT ${PORT}`);
     console.log(`📡 URL: http://localhost:${PORT}`);
     console.log(`🌐 Health check: http://localhost:${PORT}/api/health`);
+    console.log('🛡️ OWASP Security Headers & Rate Limiting: ACTIVE');
     console.log('====================================================');
 
     const connection = await testConnection();

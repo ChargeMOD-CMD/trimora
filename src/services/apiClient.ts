@@ -1,6 +1,6 @@
 // ============================================================
-// TRIMORA — Backend API Client
-// Connects frontend to the Express backend + Neon PostgreSQL
+// TRIMORA — Secure Backend API Client
+// Connects frontend to Express backend + Neon PostgreSQL with JWT Auth
 // ============================================================
 
 export interface DbHealthResponse {
@@ -18,6 +18,29 @@ let _isServerReachable: boolean | null = null;
 let _isNeonConnected: boolean | null = null;
 let _lastCheckTime = 0;
 
+export const getAuthToken = (): string | null => {
+  try {
+    const raw = localStorage.getItem('trimora_auth');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.token || null;
+  } catch {
+    return null;
+  }
+};
+
+const getHeaders = (extraHeaders: Record<string, string> = {}): Record<string, string> => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...extraHeaders,
+  };
+  const token = getAuthToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+};
+
 export const checkBackendHealth = async (force = false): Promise<{ serverOnline: boolean; neonConnected: boolean; message: string }> => {
   const now = Date.now();
   if (!force && _isServerReachable !== null && now - _lastCheckTime < 10000) {
@@ -29,7 +52,10 @@ export const checkBackendHealth = async (force = false): Promise<{ serverOnline:
   }
 
   try {
-    const res = await fetch('/api/health', { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+    const res = await fetch('/api/health', {
+      method: 'GET',
+      headers: getHeaders(),
+    });
     if (res.ok) {
       const data: DbHealthResponse = await res.json();
       _isServerReachable = true;
@@ -65,8 +91,13 @@ export const apiClient = {
     try {
       const res = await fetch(`/api${url}`, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(),
       });
+      if (res.status === 401) {
+        // If unauthorized/expired token on a protected endpoint, trigger event
+        window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+        return null;
+      }
       if (!res.ok) return null;
       return await res.json();
     } catch {
@@ -78,12 +109,22 @@ export const apiClient = {
     try {
       const res = await fetch(`/api${url}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(),
         body: JSON.stringify(data),
       });
-      if (!res.ok) return null;
+      if (res.status === 401) {
+        window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+      }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        if (errData?.error) {
+          throw new Error(errData.error);
+        }
+        return null;
+      }
       return await res.json();
-    } catch {
+    } catch (err: any) {
+      if (err.message) throw err;
       return null;
     }
   },
@@ -92,9 +133,12 @@ export const apiClient = {
     try {
       const res = await fetch(`/api${url}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(),
         body: JSON.stringify(data),
       });
+      if (res.status === 401) {
+        window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+      }
       if (!res.ok) return null;
       return await res.json();
     } catch {
@@ -106,9 +150,12 @@ export const apiClient = {
     try {
       const res = await fetch(`/api${url}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(),
         body: JSON.stringify(data),
       });
+      if (res.status === 401) {
+        window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+      }
       if (!res.ok) return null;
       return await res.json();
     } catch {
@@ -120,8 +167,11 @@ export const apiClient = {
     try {
       const res = await fetch(`/api${url}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getHeaders(),
       });
+      if (res.status === 401) {
+        window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+      }
       if (!res.ok) return null;
       return await res.json();
     } catch {

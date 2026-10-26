@@ -6,6 +6,7 @@ import { AuthProvider } from './features/auth/AuthContext';
 import { ToastProvider } from './features/notifications/ToastContext';
 import { BookingProvider } from './features/booking/BookingContext';
 import { ToastContainer } from './components/ui/ToastContainer';
+import { ProtectedRoute } from './features/auth/ProtectedRoute';
 
 // Public Pages
 import HomePage from './pages/Home';
@@ -77,24 +78,24 @@ export default function App() {
               {/* Auth */}
               <Route path="/login" element={<Login />} />
               
-              {/* Admin Dashboard Routes */}
-              <Route path="/admin" element={<DashboardOverview />} />
-              <Route path="/admin/calendar" element={<CalendarView />} />
-              <Route path="/admin/appointments" element={<AppointmentsManage />} />
-              <Route path="/admin/customers" element={<AdminPlaceholder title="Customers Management" />} />
-              <Route path="/admin/stylists" element={<StaffManage />} />
-              <Route path="/admin/services" element={<ServicesManage />} />
-              <Route path="/admin/settings" element={<Settings />} />
+              {/* Admin Dashboard Routes (Protected: Staff & Salon Owners) */}
+              <Route path="/admin" element={<ProtectedRoute allowedRoles={['super_admin', 'owner', 'manager', 'stylist', 'receptionist']}><DashboardOverview /></ProtectedRoute>} />
+              <Route path="/admin/calendar" element={<ProtectedRoute allowedRoles={['super_admin', 'owner', 'manager', 'stylist', 'receptionist']}><CalendarView /></ProtectedRoute>} />
+              <Route path="/admin/appointments" element={<ProtectedRoute allowedRoles={['super_admin', 'owner', 'manager', 'stylist', 'receptionist']}><AppointmentsManage /></ProtectedRoute>} />
+              <Route path="/admin/customers" element={<ProtectedRoute allowedRoles={['super_admin', 'owner', 'manager', 'stylist', 'receptionist']}><AdminPlaceholder title="Customers Management" /></ProtectedRoute>} />
+              <Route path="/admin/stylists" element={<ProtectedRoute allowedRoles={['super_admin', 'owner', 'manager']}><StaffManage /></ProtectedRoute>} />
+              <Route path="/admin/services" element={<ProtectedRoute allowedRoles={['super_admin', 'owner', 'manager']}><ServicesManage /></ProtectedRoute>} />
+              <Route path="/admin/settings" element={<ProtectedRoute allowedRoles={['super_admin', 'owner', 'manager']}><Settings /></ProtectedRoute>} />
               
               {/* Redirect old business dashboard routes */}
               <Route path="/business-dashboard/*" element={<Navigate to="/admin" replace />} />
               
-              {/* Super Admin Routes */}
-              <Route path="/super-admin" element={<SuperAdminDashboard />} />
-              <Route path="/super-admin/salons" element={<SalonsManage />} />
-              <Route path="/super-admin/users" element={<SuperAdminPlaceholder title="Platform Users" />} />
-              <Route path="/super-admin/health" element={<SuperAdminPlaceholder title="System Health" />} />
-              <Route path="/super-admin/settings" element={<SuperAdminPlaceholder title="Global Settings" />} />
+              {/* Super Admin Routes (Protected: Super Admin Only) */}
+              <Route path="/super-admin" element={<ProtectedRoute allowedRoles={['super_admin']}><SuperAdminDashboard /></ProtectedRoute>} />
+              <Route path="/super-admin/salons" element={<ProtectedRoute allowedRoles={['super_admin']}><SalonsManage /></ProtectedRoute>} />
+              <Route path="/super-admin/users" element={<ProtectedRoute allowedRoles={['super_admin']}><SuperAdminPlaceholder title="Platform Users" /></ProtectedRoute>} />
+              <Route path="/super-admin/health" element={<ProtectedRoute allowedRoles={['super_admin']}><SuperAdminPlaceholder title="System Health" /></ProtectedRoute>} />
+              <Route path="/super-admin/settings" element={<ProtectedRoute allowedRoles={['super_admin']}><SuperAdminPlaceholder title="Global Settings" /></ProtectedRoute>} />
               
               {/* Fallback */}
               <Route path="*" element={<HomePage />} />

@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import { testConnection, getDb } from './connection';
 
 async function seedDatabase() {
@@ -58,12 +59,12 @@ async function seedDatabase() {
     `;
 
     // 2. Seed Users
-    console.log('👤 Seeding Default Users (Super Admin, Salon Owner, Stylists)...');
+    console.log('👤 Seeding Default Users with Bcrypt Salt Hashing (OWASP A02)...');
     const users = [
       {
         id: 'user-super-1',
         email: 'super@trimora',
-        password_hash: 'super@2026#',
+        rawPassword: 'super@2026#',
         first_name: 'Super',
         last_name: 'Admin',
         phone: '+44 7700 111111',
@@ -73,7 +74,7 @@ async function seedDatabase() {
       {
         id: 'user-owner-1',
         email: 'admin@trimora',
-        password_hash: 'saloon@2026#',
+        rawPassword: 'saloon@2026#',
         first_name: 'Admin',
         last_name: 'Trimora',
         phone: '+44 7700 111111',
@@ -83,7 +84,7 @@ async function seedDatabase() {
       {
         id: 'u-staff-1',
         email: 'isabelle@trimora.co.uk',
-        password_hash: 'password123',
+        rawPassword: 'password123',
         first_name: 'Isabelle',
         last_name: 'Laurent',
         phone: '+44 7700 100010',
@@ -93,7 +94,7 @@ async function seedDatabase() {
       {
         id: 'u-staff-2',
         email: 'marcus@trimora.co.uk',
-        password_hash: 'password123',
+        rawPassword: 'password123',
         first_name: 'Marcus',
         last_name: 'Chen',
         phone: '+44 7700 100020',
@@ -103,9 +104,10 @@ async function seedDatabase() {
     ];
 
     for (const u of users) {
+      const passwordHash = await bcrypt.hash(u.rawPassword, 12);
       await sql`
         INSERT INTO users (id, email, password_hash, first_name, last_name, phone, role, business_id)
-        VALUES (${u.id}, ${u.email}, ${u.password_hash}, ${u.first_name}, ${u.last_name}, ${u.phone}, ${u.role}, ${u.business_id})
+        VALUES (${u.id}, ${u.email}, ${passwordHash}, ${u.first_name}, ${u.last_name}, ${u.phone}, ${u.role}, ${u.business_id})
         ON CONFLICT (id) DO UPDATE SET
           password_hash = EXCLUDED.password_hash,
           role = EXCLUDED.role;
